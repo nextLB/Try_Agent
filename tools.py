@@ -57,3 +57,5 @@ def calculate(expression: str):
     tree = ast.parse(expression, mode="eval")
 
     return evaluate(tree.body)
+
+
