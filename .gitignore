@@ -12,3 +12,8 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+
+# 编译链接
+build/
+
