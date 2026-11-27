@@ -18,7 +18,8 @@ client = OpenAI(
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
 )
 # MODEL = "qwen-plus"     # 语言模型
-MODEL = "qwen3.8-omni-flash"    # 多模态模型
+# MODEL = "qwen3.8-omni-flash"    # 多模态模型
+MODEL = "qwen4-max"     # 语言模型
 # 上下文存储 (后续也可加系统设定)
 MESSAGES = []
 TASK_COMPLETED = False
@@ -41,7 +42,7 @@ def get_user_message():
     # ==========================================
     # qwen-plus 纯文本模型
     # ==========================================
-    if MODEL == "qwen-plus":
+    if MODEL == "qwen-plus" or MODEL == "qwen4-max":
 
         print("\n当前模型：纯文本模式")
         user_input = input("请输入文本：").strip()
