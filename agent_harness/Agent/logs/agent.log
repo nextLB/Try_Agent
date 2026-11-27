@@ -1,0 +1,8 @@
+2026-11-27 13:57:38 [INFO] Python Agent 后端启动
+2026-11-27 13:57:38 [INFO] 模型配置：qwen4-max
+2026-11-27 13:57:38 [INFO] 日志文件：D:\LB\Try_Agent\agent_harness\Agent\logs\agent.log
+2026-11-27 13:57:39 [INFO] OpenAI 兼容客户端初始化成功，model=qwen4-max
+2026-11-27 13:57:39 [INFO] 已向 Qt 发送后端就绪状态
+2026-11-27 13:57:52 [INFO] 模型请求完成，回答字符数=14，usage={'prompt_tokens': 38, 'completion_tokens': 22, 'total_tokens': 60}
+2026-11-27 13:57:52 [INFO] 模型请求完成，回答字符数=14，usage={'prompt_tokens': 38, 'completion_tokens': 22, 'total_tokens': 60}
+2026-11-27 13:57:55 [INFO] stdin 已关闭，Python Agent 后端退出

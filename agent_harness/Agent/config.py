@@ -1,4 +1,15 @@
 
+from pathlib import Path
+
+
+AGENT_DIR = Path(__file__).resolve().parent
+
+LOG_DIR = AGENT_DIR / "logs"
+
+LOG_FILE = LOG_DIR / "agent.log"
+
+
+
 # ============================================================
 # 大模型 API 配置
 # ============================================================

@@ -7,67 +7,11 @@
 - logs/agent.log：保存普通运行日志和详细异常。
 """
 
-import json
-import logging
 import sys
-from logging.handlers import RotatingFileHandler
-from pathlib import Path
-from typing import Any, Dict, Optional
-
-
-# ============================================================
-# 路径与日志初始化
-# ============================================================
-
-AGENT_DIR = Path(__file__).resolve().parent
-LOG_DIR = AGENT_DIR / "logs"
-LOG_FILE = LOG_DIR / "agent.log"
-
-
-def setup_logger() -> logging.Logger:
-    """初始化滚动日志文件，不向 stdout 或 stderr 输出普通日志。"""
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-
-    agent_logger = logging.getLogger("HarnessAgent")
-    agent_logger.setLevel(logging.INFO)
-    agent_logger.propagate = False
-
-    if not agent_logger.handlers:
-        handler = RotatingFileHandler(
-            LOG_FILE,
-            maxBytes=5 * 1024 * 1024,
-            backupCount=3,
-            encoding="utf-8",
-        )
-        handler.setFormatter(
-            logging.Formatter(
-                "%(asctime)s [%(levelname)s] %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-            )
-        )
-        agent_logger.addHandler(handler)
-
-    return agent_logger
-
-
-logger = setup_logger()
-
-
-# ============================================================
-# API 配置加载
-# ============================================================
-
-try:
-    # 从 Agent/config.py 读取 API_KEY、BASE_URL 和 MODEL
-    from config import API_KEY, BASE_URL, MODEL
-
-    CONFIG_IMPORT_ERROR: Optional[str] = None
-except Exception as exc:
-    API_KEY = ""
-    BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    MODEL = "qwen4-max"
-    CONFIG_IMPORT_ERROR = str(exc)
-    logger.exception("导入 config.py 失败")
+from typing import Any
+from utils_function import parse_user_message, create_user_message, text_streaming_output, emit_event, logger
+from config import API_KEY, BASE_URL, MODEL, LOG_FILE
+from openai import OpenAI
 
 
 # ============================================================
@@ -84,26 +28,6 @@ MESSAGES = [
 ]
 
 
-# ============================================================
-# stdout 通信：只发送 ASCII-only JSONL
-# ============================================================
-
-def emit_event(event: Dict[str, Any]) -> None:
-    """向 Qt stdout 通道发送一条 JSON 事件，每条事件以换行符结束。
-
-    ensure_ascii=True 会把中文转换为 Unicode 转义序列，保证输出字节为 ASCII，
-    避免 Windows 控制台代码页影响 QProcess 接收到的 JSON 数据。
-    Qt 的 QJsonDocument 解析后会自动还原中文。
-    """
-    payload = json.dumps(
-        event,
-        ensure_ascii=True,
-        separators=(",", ":"),
-    )
-
-    sys.stdout.buffer.write(payload.encode("ascii") + b"\n")
-    sys.stdout.buffer.flush()
-
 
 # ============================================================
 # 日志：写入文件
@@ -114,6 +38,7 @@ def log(message: str) -> None:
     logger.info(message)
 
 
+
 # ============================================================
 # 初始化大模型客户端
 # ============================================================
@@ -122,9 +47,6 @@ def initialize_client() -> bool:
     """初始化 OpenAI 兼容客户端；成功返回 True，失败返回 False。"""
     global client
 
-    if CONFIG_IMPORT_ERROR is not None:
-        log(f"config.py 导入失败：{CONFIG_IMPORT_ERROR}")
-        return False
 
     if not str(API_KEY).strip():
         log("API_KEY 未配置，请检查 Agent/config.py")
@@ -135,8 +57,6 @@ def initialize_client() -> bool:
         return False
 
     try:
-        # 延迟导入，确保 openai 未安装时也能向 Qt 发送初始化失败状态
-        from openai import OpenAI
 
         client = OpenAI(
             api_key=str(API_KEY).strip(),
@@ -152,20 +72,6 @@ def initialize_client() -> bool:
         return False
 
 
-# ============================================================
-# Token 使用量处理
-# ============================================================
-
-def get_usage_data(usage: Any) -> Optional[Dict[str, Any]]:
-    """提取流式响应中的 Token 使用量。"""
-    if usage is None:
-        return None
-
-    return {
-        "prompt_tokens": getattr(usage, "prompt_tokens", None),
-        "completion_tokens": getattr(usage, "completion_tokens", None),
-        "total_tokens": getattr(usage, "total_tokens", None),
-    }
 
 
 # ============================================================
@@ -173,38 +79,13 @@ def get_usage_data(usage: Any) -> Optional[Dict[str, Any]]:
 # ============================================================
 
 def handle_text_request(
-    user_text: str,
-    request_id: Optional[str] = None,
+    user_text: str
 ) -> None:
     """调用模型处理一条文本请求，并通过 stdout 流式返回 JSON 事件。"""
-    if client is None:
-        emit_event(
-            {
-                "type": "error",
-                "request_id": request_id,
-                "message": "模型客户端尚未初始化，请检查 config.py 和 logs/agent.log。",
-            }
-        )
-        return
 
-    user_message = {
-        "role": "user",
-        "content": user_text,
-    }
+    user_message = create_user_message(user_text)
+
     MESSAGES.append(user_message)
-
-    assistant_parts = []
-    usage_data = None
-
-    log(f"收到文本请求，字符数={len(user_text)}")
-
-    # 通知 Qt 本轮请求开始
-    emit_event(
-        {
-            "type": "response_started",
-            "request_id": request_id,
-        }
-    )
 
     try:
         # 调用 DashScope OpenAI 兼容接口，开启流式输出
@@ -216,32 +97,30 @@ def handle_text_request(
             stream_options={"include_usage": True},
         )
 
-        # 逐块读取模型返回内容
-        for chunk in stream:
-            # 最后一个流式数据块可能只包含 usage，choices 为空
-            if getattr(chunk, "usage", None) is not None:
-                usage_data = get_usage_data(chunk.usage)
+        # 接收模型流式输出
+        assistant_parts, usage_data = text_streaming_output(stream)
 
-            if not chunk.choices:
-                continue
-
-            delta = chunk.choices[0].delta
-            content = getattr(delta, "content", None)
-
-            if content:
-                assistant_parts.append(content)
-
-                # 每收到一段模型文本，就通过 JSONL 发送给 Qt
-                emit_event(
-                    {
-                        "type": "response_delta",
-                        "request_id": request_id,
-                        "text": content,
-                    }
-                )
-
-        # 整合完整回答并保存上下文
+        # 整合完整回答
         assistant_text = "".join(assistant_parts)
+
+        # 保存助手回答到上下文
+        MESSAGES.append({
+            "role": "assistant",
+            "content": assistant_text,
+        })
+
+        log(
+            f"模型请求完成，回答字符数={len(assistant_text)}，"
+            f"usage={usage_data}"
+        )
+
+        # 通知 Qt 本轮回答结束
+        emit_event({
+            "type": "response_done",
+            "text": assistant_text,
+            "usage": usage_data,
+        })
+
         MESSAGES.append(
             {
                 "role": "assistant",
@@ -252,16 +131,6 @@ def handle_text_request(
         log(
             f"模型请求完成，回答字符数={len(assistant_text)}，"
             f"usage={usage_data}"
-        )
-
-        # 通知 Qt 本轮回答结束
-        emit_event(
-            {
-                "type": "response_done",
-                "request_id": request_id,
-                "text": assistant_text,
-                "usage": usage_data,
-            }
         )
 
     except Exception as exc:
@@ -276,7 +145,6 @@ def handle_text_request(
         emit_event(
             {
                 "type": "error",
-                "request_id": request_id,
                 "message": str(exc),
             }
         )
@@ -288,59 +156,17 @@ def handle_text_request(
 
 def handle_input_line(raw_line: bytes) -> None:
     """解析 Qt 发送的一行 UTF-8 JSON，并分发文本请求。"""
-    line = raw_line.decode("utf-8", errors="replace").strip()
-    if not line:
-        return
+    user_text = parse_user_message(raw_line)
 
-    try:
-        message = json.loads(line)
-    except json.JSONDecodeError as exc:
-        logger.warning("收到无效 JSON：%s", exc)
-        emit_event(
-            {
-                "type": "error",
-                "message": f"无效 JSON：{exc.msg}",
-            }
-        )
-        return
+    handle_text_request(user_text)
 
-    if not isinstance(message, dict):
-        emit_event(
-            {
-                "type": "error",
-                "message": "请求格式错误：JSON 顶层必须是对象。",
-            }
-        )
-        return
 
-    request_id = message.get("request_id")
-    if request_id is not None:
-        request_id = str(request_id)
 
-    # 当前版本先处理 text 字段
-    user_text = message.get("text")
 
-    if not isinstance(user_text, str):
-        emit_event(
-            {
-                "type": "error",
-                "request_id": request_id,
-                "message": "请求缺少有效的 text 字段。",
-            }
-        )
-        return
 
-    if not user_text.strip():
-        emit_event(
-            {
-                "type": "error",
-                "request_id": request_id,
-                "message": "text 字段不能为空。",
-            }
-        )
-        return
 
-    handle_text_request(user_text, request_id)
+
+
 
 
 # ============================================================
@@ -394,5 +220,12 @@ def main() -> int:
     return 0
 
 
+
+
+
+
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+
