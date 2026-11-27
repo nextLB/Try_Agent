@@ -20,7 +20,7 @@ set(CMAKE_AUTOUIC OFF)
 set(CMAKE_AUTORCC ON)
 
 # 查找 Qt6
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Network)
 
 # 创建可执行程序
 add_executable(main
@@ -41,5 +41,5 @@ add_executable(main
 
 # 链接 Qt6
 target_link_libraries(main
-    PRIVATE Qt6::Widgets
+    PRIVATE Qt6::Widgets Qt6::Network
 )

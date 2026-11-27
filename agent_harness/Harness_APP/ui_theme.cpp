@@ -74,6 +74,67 @@ void applyDarkTheme(QApplication &app)
             background-color: #0B1016;
         }
 
+        QWidget#titleBar {
+            background-color: transparent;
+        }
+
+        QLabel#titleIconLabel {
+            background-color: transparent;
+        }
+
+        QLabel#appTitleLabel {
+            color: #E6EDF3;
+            background-color: transparent;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        QWidget#connectionPanel {
+            background-color: #111923;
+            border: 1px solid #344454;
+            border-radius: 12px;
+        }
+
+        QLineEdit#skKeyInput {
+            color: #DCE5EE;
+            background-color: #0B1016;
+            border: 1px solid #344454;
+            border-radius: 8px;
+            padding: 6px 10px;
+            selection-background-color: #276B60;
+        }
+
+        QPushButton#connectButton,
+        QPushButton#disconnectButton {
+            color: #071411;
+            background-color: #54CDB7;
+            border: none;
+            border-radius: 8px;
+            padding: 6px 18px;
+            font-weight: 600;
+        }
+
+        QPushButton#disconnectButton {
+            color: #E6EDF3;
+            background-color: #344454;
+        }
+
+        QPushButton#connectButton:hover,
+        QPushButton#disconnectButton:hover {
+            background-color: #69D8C4;
+        }
+
+        QPushButton#connectButton:disabled,
+        QPushButton#disconnectButton:disabled {
+            color: #718078;
+            background-color: #293B3A;
+        }
+
+        QLabel#userIdLabel {
+            color: #69D8C4;
+            background-color: transparent;
+        }
+
         QWidget#homeCanvas {
             background: qlineargradient(
                 x1: 0, y1: 0, x2: 1, y2: 1,
@@ -82,6 +143,16 @@ void applyDarkTheme(QApplication &app)
             );
             border: 1px solid #273442;
             border-radius: 14px;
+        }
+
+        QTextEdit#chatView {
+            color: #DCE5EE;
+            background-color: #111923;
+            border: 1px solid #273442;
+            border-radius: 14px;
+            padding: 14px 18px;
+            font-size: 11px;
+            selection-background-color: #276B60;
         }
 
         QWidget#composerPanel {

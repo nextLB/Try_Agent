@@ -3,8 +3,6 @@
 
 #include "python_event_handler.h"
 
-#include <QPushButton>
-
 
 // ============================================================
 // 解析 Python stdout 中的 JSONL 数据
@@ -12,9 +10,8 @@
 
 void processStdoutBuffer(
     QByteArray &buffer,
-    QPushButton *sendButton,
-    QString &assistantResponse,
-    int &deltaCount,
+    QTextEdit *chatView,
+    BackendUiState &state,
     bool flushIncompleteLine
 )
 {
@@ -51,9 +48,8 @@ void processStdoutBuffer(
 
         handlePythonEvent(
             line,
-            sendButton,
-            assistantResponse,
-            deltaCount
+            chatView,
+            state
         );
     }
 
@@ -73,9 +69,8 @@ void processStdoutBuffer(
 
         handlePythonEvent(
             lastLine,
-            sendButton,
-            assistantResponse,
-            deltaCount
+            chatView,
+            state
         );
     }
 }

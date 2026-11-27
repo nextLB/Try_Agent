@@ -5,15 +5,32 @@
 #include <QByteArray>
 #include <QString>
 
+class QLabel;
+class QLineEdit;
 class QPushButton;
+class QTextEdit;
 
 
-// 处理一条完整的 Python JSON 事件
+struct BackendUiState {
+    QPushButton *connectButton = nullptr;
+    QPushButton *disconnectButton = nullptr;
+    QPushButton *sendButton = nullptr;
+    QLabel *userIdLabel = nullptr;
+    QLineEdit *skKeyInput = nullptr;
+    int userId = 0;
+    QString skKey;
+    bool connected = false;
+};
+
+
+void appendChatUserMessage(QTextEdit *chatView, const QString &text);
+
+
+// 处理一条完整的后端 JSON 事件
 void handlePythonEvent(
     const QByteArray &line,
-    QPushButton *sendButton,
-    QString &assistantResponse,
-    int &deltaCount
+    QTextEdit *chatView,
+    BackendUiState &state
 );
 
 #endif // PYTHON_EVENT_HANDLER_H

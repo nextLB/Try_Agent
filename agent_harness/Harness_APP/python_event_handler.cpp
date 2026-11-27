@@ -1,23 +1,162 @@
 
 #include "python_event_handler.h"
 
+#include <QColor>
+#include <QFont>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
+#include <QTextCharFormat>
+#include <QTextCursor>
+#include <QTextEdit>
 
 #include <cstdio>
 
 
+static void insertChatText(
+    QTextEdit *chatView,
+    const QString &text,
+    const QString &color,
+    int fontWeight
+)
+{
+    QTextCursor cursor(chatView->document());
+
+    cursor.movePosition(QTextCursor::End);
+
+    QTextCharFormat format;
+
+    format.setForeground(QColor(color));
+    format.setFontWeight(fontWeight);
+
+    cursor.insertText(text, format);
+
+    chatView->setTextCursor(cursor);
+    chatView->ensureCursorVisible();
+}
+
+
+static void finishChatAssistant(QTextEdit *chatView)
+{
+    if (!chatView) {
+        return;
+    }
+
+    if (chatView->property("assistantStarted").toBool()) {
+        insertChatText(chatView, "\n\n", "#DCE5EE", QFont::Normal);
+        chatView->setProperty("assistantStarted", false);
+    }
+}
+
+
+static void appendChatAssistantDelta(
+    QTextEdit *chatView,
+    const QString &text
+)
+{
+    if (!chatView || text.isEmpty()) {
+        return;
+    }
+
+    if (!chatView->property("assistantStarted").toBool()) {
+        chatView->setProperty("assistantStarted", true);
+        insertChatText(chatView, "助手：", "#54CDB7", QFont::Bold);
+    }
+
+    insertChatText(chatView, text, "#DCE5EE", QFont::Normal);
+}
+
+
+static void appendChatError(
+    QTextEdit *chatView,
+    const QString &message
+)
+{
+    if (!chatView) {
+        return;
+    }
+
+    finishChatAssistant(chatView);
+
+    insertChatText(
+        chatView,
+        "失败：" + message + "\n\n",
+        "#FF6B7A",
+        QFont::Normal
+    );
+}
+
+
+static void appendChatNotice(
+    QTextEdit *chatView,
+    const QString &text,
+    const QString &color
+)
+{
+    if (!chatView) {
+        return;
+    }
+
+    finishChatAssistant(chatView);
+
+    insertChatText(chatView, text + "\n\n", color, QFont::Normal);
+}
+
+
+static void setDisconnectedUi(
+    QTextEdit *chatView,
+    BackendUiState &state,
+    const QString &notice
+)
+{
+    state.connected = false;
+    state.userId = 0;
+    state.skKey.clear();
+
+    if (state.connectButton) {
+        state.connectButton->setEnabled(true);
+    }
+
+    if (state.disconnectButton) {
+        state.disconnectButton->setEnabled(false);
+    }
+
+    if (state.sendButton) {
+        state.sendButton->setEnabled(false);
+    }
+
+    if (state.userIdLabel) {
+        state.userIdLabel->setText("未连接");
+    }
+
+    appendChatNotice(chatView, notice, "#778595");
+}
+
+
+void appendChatUserMessage(QTextEdit *chatView, const QString &text)
+{
+    if (!chatView || text.trimmed().isEmpty()) {
+        return;
+    }
+
+    chatView->setProperty("assistantStarted", false);
+
+    insertChatText(chatView, "你：", "#69D8C4", QFont::Bold);
+    insertChatText(chatView, text + "\n\n", "#E6EDF3", QFont::Normal);
+}
+
+
 // ============================================================
-// 处理一条完整的 Python JSON 事件
+// 处理一条完整的后端 JSON 事件
 // ============================================================
 
 void handlePythonEvent(
     const QByteArray &line,
-    QPushButton *sendButton,
-    QString &assistantResponse,
-    int &deltaCount
+    QTextEdit *chatView,
+    BackendUiState &state
 )
 {
     if (line.trimmed().isEmpty()) {
@@ -35,20 +174,13 @@ void handlePythonEvent(
         QJsonDocument::fromJson(line, &parseError);
 
 
-    // JSON 解析失败
     if (parseError.error != QJsonParseError::NoError ||
         !document.isObject()) {
 
         fprintf(
             stderr,
-            "[Harness] Invalid Python JSON event: %s\n",
+            "[Harness] Invalid backend JSON event: %s\n",
             parseError.errorString().toUtf8().constData()
-        );
-
-        fprintf(
-            stderr,
-            "[Harness] Raw JSON HEX: %s\n",
-            line.toHex(' ').constData()
         );
 
         fflush(stderr);
@@ -64,199 +196,160 @@ void handlePythonEvent(
 
 
     // --------------------------------------------------------
-    // 2. Python 后端初始化状态
+    // 2. 连接建立
     // --------------------------------------------------------
 
-    if (eventType == "status") {
+    if (eventType == "connected") {
 
-        const bool ready =
-            event.value("ready").toBool(false);
+        state.connected = true;
+        state.userId = event.value("user_id").toInt(0);
+
+        if (state.connectButton) {
+            state.connectButton->setEnabled(false);
+        }
+
+        if (state.disconnectButton) {
+            state.disconnectButton->setEnabled(true);
+        }
+
+        if (state.sendButton) {
+            state.sendButton->setEnabled(true);
+        }
+
+        if (state.userIdLabel) {
+            state.userIdLabel->setText(
+                QString("已连接 ID: %1").arg(state.userId)
+            );
+        }
+
+        appendChatNotice(
+            chatView,
+            QString("已连接，ID=%1").arg(state.userId),
+            "#69D8C4"
+        );
+
+        fprintf(
+            stdout,
+            "[Harness] Connected, user_id=%d\n",
+            state.userId
+        );
+
+        fflush(stdout);
+    }
+
+
+    // --------------------------------------------------------
+    // 3. 连接失败
+    // --------------------------------------------------------
+
+    else if (eventType == "connect_failed") {
 
         const QString message =
             event.value("message").toString();
 
-        const QString model =
-            event.value("model").toString();
+        setDisconnectedUi(
+            chatView,
+            state,
+            "连接失败：" + message
+        );
 
-        sendButton->setEnabled(ready);
+        fprintf(stderr, "[Harness] Connect failed\n");
 
-        if (ready) {
-
-            fprintf(
-                stdout,
-                "[Harness] Python backend ready, model: %s\n",
-                model.toUtf8().constData()
-            );
-
-            fflush(stdout);
-        }
-        else {
-
-            const QByteArray errorData = message.toUtf8();
-
-            fprintf(
-                stderr,
-                "[Harness] Python backend initialization failed: "
-            );
-
-            fwrite(
-                errorData.constData(),
-                1,
-                static_cast<size_t>(errorData.size()),
-                stderr
-            );
-
-            fprintf(stderr, "\n");
-
-            fflush(stderr);
-        }
+        fflush(stderr);
     }
 
 
     // --------------------------------------------------------
-    // 3. 模型开始生成回答
+    // 4. 连接断开
+    // --------------------------------------------------------
+
+    else if (eventType == "disconnected") {
+
+        setDisconnectedUi(chatView, state, "已断开连接");
+
+        fprintf(stdout, "[Harness] Disconnected\n");
+
+        fflush(stdout);
+    }
+
+
+    // --------------------------------------------------------
+    // 5. 模型开始生成回答
     // --------------------------------------------------------
 
     else if (eventType == "response_started") {
 
-        assistantResponse.clear();
+        if (state.sendButton) {
+            state.sendButton->setEnabled(false);
+        }
 
-        deltaCount = 0;
-
-        sendButton->setEnabled(false);
-
-        fprintf(
-            stdout,
-            "\n[Harness] Model response started:\n"
-        );
-
-        fflush(stdout);
+        if (chatView) {
+            chatView->setProperty("assistantStarted", false);
+        }
     }
 
 
     // --------------------------------------------------------
-    // 4. 接收模型流式文本片段
+    // 6. 接收模型流式文本片段
     // --------------------------------------------------------
 
     else if (eventType == "response_delta") {
 
-        const QString deltaText =
-            event.value("text").toString();
+        const int eventUserId =
+            event.value("user_id").toInt(-1);
 
-        if (!deltaText.isEmpty()) {
-
-            assistantResponse += deltaText;
-
-            ++deltaCount;
-
-            const QByteArray utf8Data =
-                deltaText.toUtf8();
-
-            // 实时输出模型文本
-            fwrite(
-                utf8Data.constData(),
-                1,
-                static_cast<size_t>(utf8Data.size()),
-                stdout
-            );
-
-            fflush(stdout);
+        if (eventUserId != state.userId) {
+            return;
         }
+
+        appendChatAssistantDelta(
+            chatView,
+            event.value("text").toString()
+        );
     }
 
 
     // --------------------------------------------------------
-    // 5. 模型回答完成
+    // 7. 模型回答完成
     // --------------------------------------------------------
 
     else if (eventType == "response_done") {
 
-        const QJsonObject usage =
-            event.value("usage").toObject();
+        finishChatAssistant(chatView);
 
-
-        fprintf(stdout, "\n");
-
-        fprintf(
-            stdout,
-            "[Harness] Model response completed\n"
-        );
-
-
-        // 输出 Token 使用情况
-        if (!usage.isEmpty()) {
-
-            const int promptTokens =
-                usage.value("prompt_tokens").toInt();
-
-            const int completionTokens =
-                usage.value("completion_tokens").toInt();
-
-            const int totalTokens =
-                usage.value("total_tokens").toInt();
-
-            fprintf(
-                stdout,
-                "[Tokens] prompt=%d completion=%d total=%d\n",
-                promptTokens,
-                completionTokens,
-                totalTokens
-            );
-        }
-
-
-        fprintf(
-            stdout,
-            "[Harness] Received Delta count: %d\n",
-            deltaCount
-        );
+        fprintf(stdout, "[Harness] Response succeeded\n");
 
         fflush(stdout);
 
-
-        assistantResponse.clear();
-
-        sendButton->setEnabled(true);
+        if (state.connected && state.sendButton) {
+            state.sendButton->setEnabled(true);
+        }
     }
 
 
     // --------------------------------------------------------
-    // 6. Python 或模型请求发生错误
+    // 8. 后端或模型请求发生错误
     // --------------------------------------------------------
 
     else if (eventType == "error") {
 
-        const QString errorMessage =
-            event.value("message").toString();
-
-        const QByteArray errorData =
-            errorMessage.toUtf8();
-
-        fprintf(
-            stderr,
-            "\n[Harness] Python/API error: "
+        appendChatError(
+            chatView,
+            event.value("message").toString()
         );
 
-        fwrite(
-            errorData.constData(),
-            1,
-            static_cast<size_t>(errorData.size()),
-            stderr
-        );
-
-        fprintf(stderr, "\n");
+        fprintf(stderr, "[Harness] Response failed\n");
 
         fflush(stderr);
 
-
-        assistantResponse.clear();
-
-        sendButton->setEnabled(true);
+        if (state.connected && state.sendButton) {
+            state.sendButton->setEnabled(true);
+        }
     }
 
 
     // --------------------------------------------------------
-    // 7. 其他暂未处理的事件
+    // 9. 其他暂未处理的事件
     // --------------------------------------------------------
 
     else {

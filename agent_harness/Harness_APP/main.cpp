@@ -5,116 +5,202 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLabel>
+#include <QLineEdit>
 #include <QMainWindow>
 #include <QPlainTextEdit>
-#include <QProcess>
-#include <QProcessEnvironment>
+#include <QPixmap>
 #include <QPushButton>
 #include <QSizePolicy>
-#include <QStandardPaths>
+#include <QStringList>
+#include <QTextEdit>
+#include <QTcpSocket>
 #include <QVBoxLayout>
 #include <QWidget>
 
 #include <cstdio>
 
-// 导入自定义模块
 #include "ui_theme.h"
 #include "python_event_handler.h"
 #include "python_stdout_parser.h"
 
 
-// ============================================================
-// 1. 程序入口
-// ============================================================
-
 int main(int argc, char *argv[])
 {
-    // --------------------------------------------------------
-    // 1.1 创建 Qt 应用程序
-    // --------------------------------------------------------
-
     QApplication app(argc, argv);
 
     app.setApplicationName("Harness");
     app.setOrganizationName("PersonalProjects");
 
-
-    // --------------------------------------------------------
-    // 1.2 初始化 UI 主题
-    // --------------------------------------------------------
-
     applyDarkTheme(app);
 
+    const QString appDir =
+        QCoreApplication::applicationDirPath();
 
-    // ========================================================
-    // 2. 创建主窗口
-    // ========================================================
+    const QStringList iconCandidates = {
+        QDir(appDir).filePath("app_icon.png"),
+        QDir::cleanPath(
+            QDir(appDir).absoluteFilePath("../resources/app_icon.png")
+        ),
+        QDir::cleanPath(
+            QDir(appDir).absoluteFilePath(
+                "../../Harness_APP/resources/app_icon.png"
+            )
+        ),
+        QDir::cleanPath(
+            QDir(appDir).absoluteFilePath(
+                "../Harness_APP/resources/app_icon.png"
+            )
+        ),
+        QDir::cleanPath(
+            QDir(appDir).absoluteFilePath(
+                "../agent_harness/Harness_APP/resources/app_icon.png"
+            )
+        ),
+    };
+
+    QString appIconPath;
+
+    for (const QString &candidate : iconCandidates) {
+        if (QFileInfo::exists(candidate)) {
+            appIconPath = candidate;
+            break;
+        }
+    }
 
     QMainWindow window;
 
     window.setObjectName("mainWindow");
     window.setWindowTitle("Harness");
+
+    if (!appIconPath.isEmpty()) {
+        window.setWindowIcon(QIcon(appIconPath));
+    }
+
     window.resize(1280, 800);
     window.setMinimumSize(900, 600);
-
-
-    // --------------------------------------------------------
-    // 2.1 创建根容器
-    // --------------------------------------------------------
 
     auto *rootSurface = new QWidget(&window);
 
     rootSurface->setObjectName("rootSurface");
-
-    rootSurface->setAttribute(
-        Qt::WA_StyledBackground,
-        true
-    );
+    rootSurface->setAttribute(Qt::WA_StyledBackground, true);
 
     auto *rootLayout = new QVBoxLayout(rootSurface);
 
     rootLayout->setContentsMargins(14, 14, 14, 14);
-    rootLayout->setSpacing(0);
+    rootLayout->setSpacing(12);
 
+    auto *titleBar = new QWidget(rootSurface);
 
-    // --------------------------------------------------------
-    // 2.2 创建首页中央区域
-    // --------------------------------------------------------
+    titleBar->setObjectName("titleBar");
+    titleBar->setAttribute(Qt::WA_StyledBackground, true);
+    titleBar->setFixedHeight(48);
+
+    auto *titleBarLayout = new QHBoxLayout(titleBar);
+
+    titleBarLayout->setContentsMargins(4, 0, 4, 0);
+    titleBarLayout->setSpacing(10);
+
+    auto *titleIconLabel = new QLabel(titleBar);
+
+    titleIconLabel->setObjectName("titleIconLabel");
+    titleIconLabel->setFixedSize(28, 28);
+
+    if (!appIconPath.isEmpty()) {
+        titleIconLabel->setPixmap(
+            QPixmap(appIconPath).scaled(
+                28,
+                28,
+                Qt::KeepAspectRatio,
+                Qt::SmoothTransformation
+            )
+        );
+    }
+
+    auto *titleLabel = new QLabel("Harness", titleBar);
+
+    titleLabel->setObjectName("appTitleLabel");
+
+    titleBarLayout->addStretch(1);
+    titleBarLayout->addWidget(titleIconLabel);
+    titleBarLayout->addWidget(titleLabel);
+    titleBarLayout->addStretch(1);
+
+    rootLayout->addWidget(titleBar);
+
+    auto *connectionPanel = new QWidget(rootSurface);
+
+    connectionPanel->setObjectName("connectionPanel");
+    connectionPanel->setAttribute(Qt::WA_StyledBackground, true);
+
+    auto *connectionLayout = new QHBoxLayout(connectionPanel);
+
+    connectionLayout->setContentsMargins(10, 8, 10, 8);
+    connectionLayout->setSpacing(10);
+
+    auto *skKeyInput = new QLineEdit(connectionPanel);
+
+    skKeyInput->setObjectName("skKeyInput");
+    skKeyInput->setPlaceholderText("sk-key");
+    skKeyInput->setEchoMode(QLineEdit::Password);
+    skKeyInput->setFixedHeight(34);
+
+    auto *connectButton = new QPushButton("连接", connectionPanel);
+
+    connectButton->setObjectName("connectButton");
+    connectButton->setFixedHeight(34);
+    connectButton->setMinimumWidth(80);
+    connectButton->setCursor(Qt::PointingHandCursor);
+
+    auto *disconnectButton = new QPushButton("断开", connectionPanel);
+
+    disconnectButton->setObjectName("disconnectButton");
+    disconnectButton->setFixedHeight(34);
+    disconnectButton->setMinimumWidth(80);
+    disconnectButton->setCursor(Qt::PointingHandCursor);
+    disconnectButton->setEnabled(false);
+
+    auto *userIdLabel = new QLabel("未连接", connectionPanel);
+
+    userIdLabel->setObjectName("userIdLabel");
+
+    connectionLayout->addWidget(skKeyInput);
+    connectionLayout->addWidget(connectButton);
+    connectionLayout->addWidget(disconnectButton);
+    connectionLayout->addStretch(1);
+    connectionLayout->addWidget(userIdLabel);
+
+    rootLayout->addWidget(connectionPanel);
 
     auto *homeCanvas = new QWidget(rootSurface);
 
     homeCanvas->setObjectName("homeCanvas");
-
-    homeCanvas->setAttribute(
-        Qt::WA_StyledBackground,
-        true
-    );
+    homeCanvas->setAttribute(Qt::WA_StyledBackground, true);
 
     auto *homeLayout = new QVBoxLayout(homeCanvas);
 
     homeLayout->setContentsMargins(28, 28, 28, 24);
-    homeLayout->setSpacing(0);
+    homeLayout->setSpacing(14);
 
-    homeLayout->addStretch(1);
+    auto *chatView = new QTextEdit(homeCanvas);
 
+    chatView->setObjectName("chatView");
+    chatView->setReadOnly(true);
+    chatView->setSizePolicy(
+        QSizePolicy::Expanding,
+        QSizePolicy::Expanding
+    );
 
-    // --------------------------------------------------------
-    // 2.3 创建消息输入面板
-    // --------------------------------------------------------
+    homeLayout->addWidget(chatView);
 
     auto *composerPanel = new QWidget(homeCanvas);
 
     composerPanel->setObjectName("composerPanel");
-
-    composerPanel->setAttribute(
-        Qt::WA_StyledBackground,
-        true
-    );
-
-    composerPanel->setMaximumWidth(900);
-
+    composerPanel->setAttribute(Qt::WA_StyledBackground, true);
+    composerPanel->setMaximumWidth(1400);
     composerPanel->setSizePolicy(
         QSizePolicy::Expanding,
         QSizePolicy::Fixed
@@ -125,11 +211,6 @@ int main(int argc, char *argv[])
     composerLayout->setContentsMargins(16, 12, 16, 12);
     composerLayout->setSpacing(10);
 
-
-    // --------------------------------------------------------
-    // 2.4 创建多行文本输入框
-    // --------------------------------------------------------
-
     auto *messageInput = new QPlainTextEdit(composerPanel);
 
     messageInput->setObjectName("messageInput");
@@ -138,11 +219,6 @@ int main(int argc, char *argv[])
     messageInput->setTabChangesFocus(false);
 
     composerLayout->addWidget(messageInput);
-
-
-    // --------------------------------------------------------
-    // 2.5 创建发送按钮
-    // --------------------------------------------------------
 
     auto *buttonLayout = new QHBoxLayout();
 
@@ -154,17 +230,11 @@ int main(int argc, char *argv[])
     sendButton->setCursor(Qt::PointingHandCursor);
     sendButton->setMinimumWidth(88);
     sendButton->setFixedHeight(36);
-
     sendButton->setEnabled(false);
 
     buttonLayout->addWidget(sendButton);
 
     composerLayout->addLayout(buttonLayout);
-
-
-    // --------------------------------------------------------
-    // 2.6 输入面板居中
-    // --------------------------------------------------------
 
     auto *composerRow = new QHBoxLayout();
 
@@ -173,355 +243,184 @@ int main(int argc, char *argv[])
     composerRow->addStretch(1);
 
     homeLayout->addLayout(composerRow);
+    homeLayout->setStretch(0, 1);
 
     rootLayout->addWidget(homeCanvas);
+    rootLayout->setStretch(2, 1);
 
     window.setCentralWidget(rootSurface);
 
+    const QString serverHost = "127.0.0.1";
+    const quint16 serverPort = 9000;
 
-    // ========================================================
-    // 3. 定位 Python Agent 项目
-    // ========================================================
+    auto *backendSocket = new QTcpSocket(&app);
 
-    const QString appDir =
-        QCoreApplication::applicationDirPath();
+    BackendUiState backendState;
 
-    const QString agentDir = QDir::cleanPath(
-        QDir(appDir).absoluteFilePath("../../Agent")
-    );
+    backendState.connectButton = connectButton;
+    backendState.disconnectButton = disconnectButton;
+    backendState.sendButton = sendButton;
+    backendState.userIdLabel = userIdLabel;
+    backendState.skKeyInput = skKeyInput;
 
-    const QString pythonScript = QDir::cleanPath(
-        QDir(agentDir).filePath("main.py")
-    );
+    QByteArray backendBuffer;
+    QString pendingSkKey;
 
+    auto sendRequest = [backendSocket](const QJsonObject &request) {
+        const QByteArray payload =
+            QJsonDocument(request).toJson(QJsonDocument::Compact)
+            + '\n';
 
-    // ========================================================
-    // 4. 创建 Python 子进程
-    // ========================================================
-
-    auto *py = new QProcess(&app);
-
-    py->setWorkingDirectory(agentDir);
-
-    py->setProcessChannelMode(
-        QProcess::SeparateChannels
-    );
-
-
-    // --------------------------------------------------------
-    // 4.1 设置 Python UTF-8 环境
-    // --------------------------------------------------------
-
-    QProcessEnvironment processEnvironment =
-        QProcessEnvironment::systemEnvironment();
-
-    processEnvironment.insert("PYTHONUTF8", "1");
-    processEnvironment.insert("PYTHONIOENCODING", "utf-8");
-
-    py->setProcessEnvironment(processEnvironment);
-
-
-    // --------------------------------------------------------
-    // 4.2 Python 数据缓冲区和 Agent 响应状态
-    // --------------------------------------------------------
-
-    QByteArray pythonStdoutBuffer;
-
-    QString currentAssistantResponse;
-
-    int currentDeltaCount = 0;
-
-
-    // ========================================================
-    // 5. 接收 Python stdout
-    // ========================================================
+        backendSocket->write(payload);
+        backendSocket->flush();
+    };
 
     QObject::connect(
-        py,
-        &QProcess::readyReadStandardOutput,
+        connectButton,
+        &QPushButton::clicked,
         &window,
-        [py,
+        [backendSocket,
+         skKeyInput,
+         connectButton,
+         disconnectButton,
          sendButton,
-         &pythonStdoutBuffer,
-         &currentAssistantResponse,
-         &currentDeltaCount]() {
+         userIdLabel,
+         chatView,
+         sendRequest,
+         serverHost,
+         serverPort,
+         &backendState,
+         &backendBuffer,
+         &pendingSkKey]() {
 
-            // 读取 Python 当前可用的 stdout 数据
-            pythonStdoutBuffer +=
-                py->readAllStandardOutput();
+            const QString skKey = skKeyInput->text().trimmed();
 
-
-            // 交给 JSONL 数据解析模块
-            processStdoutBuffer(
-                pythonStdoutBuffer,
-                sendButton,
-                currentAssistantResponse,
-                currentDeltaCount
-            );
-        }
-    );
-
-
-    // ========================================================
-    // 6. 接收 Python stderr
-    // ========================================================
-
-    QObject::connect(
-        py,
-        &QProcess::readyReadStandardError,
-        &window,
-        [py]() {
-
-            const QByteArray output =
-                py->readAllStandardError();
-
-            if (!output.isEmpty()) {
-
-                // 当前仅用于终端调试
-                const QByteArray prefix =
-                    "[Python stderr] ";
-
-                fwrite(
-                    prefix.constData(),
-                    1,
-                    static_cast<size_t>(prefix.size()),
-                    stderr
-                );
-
-                fwrite(
-                    output.constData(),
-                    1,
-                    static_cast<size_t>(output.size()),
-                    stderr
-                );
-
-                fflush(stderr);
+            if (skKey.isEmpty()) {
+                skKeyInput->setFocus();
+                return;
             }
-        }
-    );
 
+            backendState.skKey = skKey;
+            pendingSkKey = skKey;
 
-    // ========================================================
-    // 7. Python 进程生命周期管理
-    // ========================================================
+            backendSocket->abort();
+            backendBuffer.clear();
 
-    // --------------------------------------------------------
-    // 7.1 Python 进程启动成功
-    // --------------------------------------------------------
+            connectButton->setEnabled(false);
+            disconnectButton->setEnabled(false);
+            sendButton->setEnabled(false);
+            userIdLabel->setText("连接中");
 
-    QObject::connect(
-        py,
-        &QProcess::started,
-        &window,
-        []() {
+            backendSocket->connectToHost(serverHost, serverPort);
 
-            fprintf(
-                stdout,
-                "[Harness] Python process started.\n"
-            );
+            fprintf(stdout, "[Harness] Connecting to backend...\n");
 
             fflush(stdout);
         }
     );
 
+    QObject::connect(
+        backendSocket,
+        &QTcpSocket::connected,
+        &window,
+        [sendRequest, &pendingSkKey]() {
 
-    // --------------------------------------------------------
-    // 7.2 Python 进程发生错误
-    // --------------------------------------------------------
+            QJsonObject request;
+
+            request.insert("type", "connect");
+            request.insert("sk-key", pendingSkKey);
+
+            sendRequest(request);
+        }
+    );
 
     QObject::connect(
-        py,
-        &QProcess::errorOccurred,
+        backendSocket,
+        &QTcpSocket::readyRead,
         &window,
-        [py, sendButton](QProcess::ProcessError) {
+        [backendSocket, chatView, &backendBuffer, &backendState]() {
 
+            backendBuffer += backendSocket->readAll();
+
+            processStdoutBuffer(
+                backendBuffer,
+                chatView,
+                backendState
+            );
+        }
+    );
+
+    QObject::connect(
+        backendSocket,
+        &QTcpSocket::disconnected,
+        &window,
+        [connectButton,
+         disconnectButton,
+         sendButton,
+         userIdLabel,
+         &backendState]() {
+
+            backendState.connected = false;
+            backendState.userId = 0;
+            backendState.skKey.clear();
+
+            connectButton->setEnabled(true);
+            disconnectButton->setEnabled(false);
             sendButton->setEnabled(false);
+            userIdLabel->setText("未连接");
 
-            const QByteArray errorData =
-                py->errorString().toUtf8();
+            fprintf(stdout, "[Harness] Backend disconnected\n");
 
-            fprintf(
-                stderr,
-                "[Harness] Python process error: "
-            );
+            fflush(stdout);
+        }
+    );
 
-            fwrite(
-                errorData.constData(),
-                1,
-                static_cast<size_t>(errorData.size()),
-                stderr
-            );
+    QObject::connect(
+        backendSocket,
+        &QTcpSocket::errorOccurred,
+        &window,
+        [connectButton,
+         disconnectButton,
+         sendButton,
+         userIdLabel]() {
 
-            fprintf(stderr, "\n");
+            connectButton->setEnabled(true);
+            disconnectButton->setEnabled(false);
+            sendButton->setEnabled(false);
+            userIdLabel->setText("未连接");
+
+            fprintf(stderr, "[Harness] Backend connection error\n");
 
             fflush(stderr);
         }
     );
 
-
-    // --------------------------------------------------------
-    // 7.3 Python 进程退出
-    // --------------------------------------------------------
-
-    QObject::connect(
-        py,
-        &QProcess::finished,
-        &window,
-        [py,
-         sendButton,
-         &pythonStdoutBuffer,
-         &currentAssistantResponse,
-         &currentDeltaCount](
-            int exitCode,
-            QProcess::ExitStatus exitStatus
-        ) {
-
-            // 读取最后剩余的 stdout
-            pythonStdoutBuffer +=
-                py->readAllStandardOutput();
-
-
-            // 处理缓冲区中的残余 JSON 数据
-            processStdoutBuffer(
-                pythonStdoutBuffer,
-                sendButton,
-                currentAssistantResponse,
-                currentDeltaCount,
-                true
-            );
-
-
-            // 读取最后剩余的 stderr
-            const QByteArray errorOutput =
-                py->readAllStandardError();
-
-            if (!errorOutput.isEmpty()) {
-
-                fwrite(
-                    errorOutput.constData(),
-                    1,
-                    static_cast<size_t>(errorOutput.size()),
-                    stderr
-                );
-
-                fflush(stderr);
-            }
-
-
-            sendButton->setEnabled(false);
-
-
-            fprintf(
-                stdout,
-                "[Harness] Python process exited. "
-                "exitCode=%d normalExit=%s\n",
-                exitCode,
-                exitStatus == QProcess::NormalExit
-                    ? "true"
-                    : "false"
-            );
-
-            fflush(stdout);
-        }
-    );
-
-
-    // ========================================================
-    // 8. 查找并启动 Python 解释器
-    // ========================================================
-
-    const QFileInfo scriptInfo(pythonScript);
-
-    const QString pythonProgram =
-        QStandardPaths::findExecutable("python");
-
-
-    if (!scriptInfo.exists() || !scriptInfo.isFile()) {
-
-        fprintf(
-            stderr,
-            "[Harness] Python script not found.\n"
-        );
-
-        fflush(stderr);
-    }
-
-    else if (pythonProgram.isEmpty()) {
-
-        fprintf(
-            stderr,
-            "[Harness] Python interpreter not found.\n"
-        );
-
-        fflush(stderr);
-    }
-
-    else {
-
-        // 设置 Python 解释器
-        py->setProgram(pythonProgram);
-
-        // -u：禁用 Python stdout/stderr 缓冲
-        py->setArguments({
-            "-u",
-            pythonScript
-        });
-
-
-        fprintf(
-            stdout,
-            "[Harness] Python interpreter: %s\n",
-            pythonProgram.toUtf8().constData()
-        );
-
-        fprintf(
-            stdout,
-            "[Harness] Python script: %s\n",
-            pythonScript.toUtf8().constData()
-        );
-
-        fprintf(
-            stdout,
-            "[Harness] Agent directory: %s\n",
-            agentDir.toUtf8().constData()
-        );
-
-        fflush(stdout);
-
-
-        // 启动 Python 子进程
-        py->start();
-    }
-
-
-    // ========================================================
-    // 9. Qt → Python：发送 JSONL 消息
-    // ========================================================
-
     QObject::connect(
         sendButton,
         &QPushButton::clicked,
         &window,
-        [messageInput, py, sendButton]() {
+        [messageInput,
+         backendSocket,
+         sendButton,
+         chatView,
+         sendRequest,
+         &backendState]() {
 
             const QString message =
                 messageInput->toPlainText().trimmed();
 
-
             if (message.isEmpty()) {
-
                 messageInput->setFocus();
-
                 return;
             }
 
-
-            // 检查 Python 进程是否正常运行
-            if (py->state() != QProcess::Running) {
+            if (!backendState.connected ||
+                backendSocket->state()
+                    != QAbstractSocket::ConnectedState) {
 
                 fprintf(
                     stderr,
-                    "[Harness] Python process is not running.\n"
+                    "[Harness] Backend is not connected.\n"
                 );
 
                 fflush(stderr);
@@ -529,113 +428,59 @@ int main(int argc, char *argv[])
                 return;
             }
 
+            QJsonObject request;
 
-            // ------------------------------------------------
-            // 9.1 创建 JSON 对象
-            // ------------------------------------------------
+            request.insert("type", "chat");
+            request.insert("user_id", backendState.userId);
+            request.insert("sk-key", backendState.skKey);
+            request.insert("text", message);
 
-            QJsonObject messageObject;
+            sendRequest(request);
 
-            messageObject.insert("text", message);
-
-
-            // ------------------------------------------------
-            // 9.2 序列化 JSON
-            // ------------------------------------------------
-
-            const QByteArray jsonData =
-                QJsonDocument(messageObject).toJson(
-                    QJsonDocument::Compact
-                );
-
-
-            // ------------------------------------------------
-            // 9.3 JSONL：每条消息以换行符结尾
-            // ------------------------------------------------
-
-            const QByteArray payload =
-                jsonData + '\n';
-
-
-            // ------------------------------------------------
-            // 9.4 写入 Python stdin
-            // ------------------------------------------------
-
-            const qint64 bytesWritten =
-                py->write(payload);
-
-
-            if (bytesWritten < 0) {
-
-                fprintf(
-                    stderr,
-                    "[Harness] Failed to write to Python.\n"
-                );
-
-                fflush(stderr);
-
-                return;
-            }
-
-
-            // ------------------------------------------------
-            // 9.5 更新界面状态
-            // ------------------------------------------------
-
-            fprintf(
-                stdout,
-                "[Harness] Message sent to Python.\n"
-            );
-
-            fflush(stdout);
+            appendChatUserMessage(chatView, message);
 
             messageInput->clear();
-
             messageInput->setFocus();
 
             sendButton->setEnabled(false);
         }
     );
 
+    QObject::connect(
+        disconnectButton,
+        &QPushButton::clicked,
+        &window,
+        [backendSocket,
+         sendButton,
+         disconnectButton,
+         sendRequest,
+         &backendState]() {
 
-    // ========================================================
-    // 10. Qt 退出时关闭 Python 子进程
-    // ========================================================
+            if (!backendState.connected) {
+                return;
+            }
+
+            QJsonObject request;
+
+            request.insert("type", "disconnect");
+            request.insert("user_id", backendState.userId);
+            request.insert("sk-key", backendState.skKey);
+
+            sendRequest(request);
+
+            disconnectButton->setEnabled(false);
+            sendButton->setEnabled(false);
+        }
+    );
 
     QObject::connect(
         &app,
         &QCoreApplication::aboutToQuit,
-        py,
-        [py]() {
-
-            if (py->state() != QProcess::NotRunning) {
-
-                // 关闭 Python stdin
-                py->closeWriteChannel();
-
-
-                // 等待 Python 正常退出
-                if (!py->waitForFinished(2000)) {
-
-                    // 超时则尝试终止
-                    py->terminate();
-
-                    if (!py->waitForFinished(1000)) {
-
-                        // 最后强制结束
-                        py->kill();
-
-                        py->waitForFinished(1000);
-                    }
-                }
-            }
+        backendSocket,
+        [backendSocket]() {
+            backendSocket->disconnectFromHost();
         }
     );
-
-
-    // ========================================================
-    // 11. 显示窗口并进入事件循环
-    // ========================================================
 
     window.show();
 

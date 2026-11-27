@@ -1,7 +1,5 @@
 import json
-from typing import Any, Dict, Optional
-import sys
-import json
+from typing import Any, Callable, Dict, Optional
 import logging
 from logging.handlers import RotatingFileHandler
 from config import LOG_DIR, LOG_FILE
@@ -40,41 +38,21 @@ def setup_logger() -> logging.Logger:
 logger = setup_logger()
 
 
-
 # ============================================================
-# stdout 通信：只发送 ASCII-only JSONL
+# socket 通信：只发送 ASCII-only JSONL
 # ============================================================
 
-def emit_event(event: Dict[str, Any]) -> None:
-    """向 Qt stdout 通道发送一条 JSON 事件，每条事件以换行符结束。
-
-    ensure_ascii=True 会把中文转换为 Unicode 转义序列，保证输出字节为 ASCII，
-    避免 Windows 控制台代码页影响 QProcess 接收到的 JSON 数据。
-    Qt 的 QJsonDocument 解析后会自动还原中文。
-    """
+def send_event(socket_obj: Any, event: Dict[str, Any]) -> None:
     payload = json.dumps(
         event,
         ensure_ascii=True,
         separators=(",", ":"),
     )
 
-    sys.stdout.buffer.write(payload.encode("ascii") + b"\n")
-    sys.stdout.buffer.flush()
+    socket_obj.sendall(payload.encode("ascii") + b"\n")
 
 
-
-def parse_user_message(raw_line: bytes) -> str | None:
-    """
-    解析 C++ 发送的 JSONL 消息，提取用户文本。
-
-    Args:
-        raw_line: 原始 JSON 字节数据。
-
-    Returns:
-        str: 有效的用户输入文本。
-        None: JSON 解析失败、格式错误或文本为空。
-    """
-
+def parse_request(raw_line: bytes) -> Optional[Dict[str, Any]]:
     line = raw_line.decode("utf-8", errors="replace").strip()
 
     if not line:
@@ -88,17 +66,12 @@ def parse_user_message(raw_line: bytes) -> str | None:
     if not isinstance(message, dict):
         return None
 
-    user_text = message.get("text")
+    event_type = message.get("type")
 
-    if not isinstance(user_text, str):
+    if not isinstance(event_type, str) or not event_type:
         return None
 
-    user_text = user_text.strip()
-
-    if not user_text:
-        return None
-
-    return user_text
+    return message
 
 
 def create_user_message(user_text: str) -> dict:
@@ -136,13 +109,18 @@ def get_usage_data(usage: Any) -> Optional[Dict[str, Any]]:
     }
 
 
-
-def text_streaming_output(stream: object) -> tuple[list[str], dict | None]:
+def text_streaming_output(
+    stream: object,
+    send_delta: Callable[[str], bool],
+    is_alive: Callable[[], bool],
+) -> tuple[list[str], dict | None]:
     """
-    接收模型流式输出，提取文本并实时发送给 Qt。
+    接收模型流式输出，提取文本并实时发送给对应连接。
 
     Args:
         stream: 模型 API 返回的流式数据对象。
+        send_delta: 发送文本片段的回调，返回 False 表示连接已断开。
+        is_alive: 查询连接是否仍然有效的回调。
 
     Returns:
         assistant_parts: 模型返回的文本片段列表。
@@ -152,14 +130,14 @@ def text_streaming_output(stream: object) -> tuple[list[str], dict | None]:
     assistant_parts = []
     usage_data = None
 
-    # 逐块读取模型返回内容
     for chunk in stream:
 
-        # 获取 Token 使用量
+        if not is_alive():
+            break
+
         if getattr(chunk, "usage", None) is not None:
             usage_data = get_usage_data(chunk.usage)
 
-        # 最后一个流式数据块可能只包含 usage
         if not chunk.choices:
             continue
 
@@ -169,13 +147,7 @@ def text_streaming_output(stream: object) -> tuple[list[str], dict | None]:
         if content:
             assistant_parts.append(content)
 
-            # 实时发送文本片段给 Qt
-            emit_event({
-                "type": "response_delta",
-                "text": content,
-            })
+            if not send_delta(content):
+                break
 
     return assistant_parts, usage_data
-
-
-
