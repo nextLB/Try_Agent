@@ -16,7 +16,7 @@ list(PREPEND CMAKE_PREFIX_PATH
 
 # Qt 自动化处理
 set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTOUIC ON)
+set(CMAKE_AUTOUIC OFF)
 set(CMAKE_AUTORCC ON)
 
 # 查找 Qt6
@@ -25,6 +25,18 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets)
 # 创建可执行程序
 add_executable(main
     main.cpp
+
+    # UI Theme
+    ui_theme.cpp
+    ui_theme.h
+
+    # Python Event Handler
+    python_event_handler.cpp
+    python_event_handler.h
+
+    # Python Stdout Parser
+    python_stdout_parser.cpp
+    python_stdout_parser.h
 )
 
 # 链接 Qt6
