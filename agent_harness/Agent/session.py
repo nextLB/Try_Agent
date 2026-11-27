@@ -3,7 +3,7 @@ from typing import Any
 
 from openai import OpenAI
 
-from config import BASE_URL, MODEL
+from config import BASE_URL
 from utils_function import (
     create_user_message,
     logger,
@@ -15,10 +15,17 @@ SYSTEM_PROMPT = "你是一个简洁、友好的助手，请使用中文回答。
 
 
 class UserSession:
-    def __init__(self, user_id: int, sk_key: str, socket_obj: Any):
+    def __init__(
+        self,
+        user_id: int,
+        sk_key: str,
+        socket_obj: Any,
+        model: str,
+    ):
         self.user_id = user_id
         self.sk_key = sk_key
         self.socket = socket_obj
+        self.model = model
         self.lock = threading.Lock()
         self.alive = True
         self.messages = [
@@ -69,7 +76,7 @@ class UserSession:
 
         try:
             stream = self.client.chat.completions.create(
-                model=MODEL,
+                model=self.model,
                 messages=self.messages,
                 temperature=0.7,
                 stream=True,
@@ -89,7 +96,7 @@ class UserSession:
             })
 
             logger.info(
-                f"user_id={self.user_id} 模型请求完成，"
+                f"user_id={self.user_id} model={self.model} 模型请求完成，"
                 f"回答字符数={len(assistant_text)}，usage={usage_data}"
             )
 

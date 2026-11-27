@@ -3,7 +3,7 @@ import socket
 import sys
 import threading
 
-from config import HOST, PORT
+from config import HOST, PORT, MODEL
 from session import UserSession
 from utils_function import logger, parse_request, send_event
 
@@ -208,11 +208,23 @@ class BackendServer:
             )
             return None
 
+        model = request.get("model")
+
+        if not isinstance(model, str) or not model.strip():
+            model = MODEL
+        else:
+            model = model.strip()
+
         user_id = None
 
         try:
             user_id = self.allocate_id()
-            new_session = UserSession(user_id, sk_key.strip(), conn)
+            new_session = UserSession(
+                user_id,
+                sk_key.strip(),
+                conn,
+                model,
+            )
         except Exception as exc:
             logger.exception("创建用户会话失败")
 
@@ -231,13 +243,16 @@ class BackendServer:
         with self.lock:
             self.sessions[user_id] = new_session
 
-        logger.info(f"user_id={user_id} 已连接，addr={addr}")
+        logger.info(
+            f"user_id={user_id} model={model} 已连接，addr={addr}"
+        )
 
         self.send_raw(
             conn,
             {
                 "type": "connected",
                 "user_id": user_id,
+                "model": model,
             },
         )
 

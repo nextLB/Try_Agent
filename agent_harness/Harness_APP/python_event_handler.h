@@ -19,6 +19,7 @@ struct BackendUiState {
     QLineEdit *skKeyInput = nullptr;
     int userId = 0;
     QString skKey;
+    QString model;
     bool connected = false;
 };
 

@@ -22,9 +22,18 @@ set(CMAKE_AUTORCC ON)
 # 查找 Qt6
 find_package(Qt6 REQUIRED COMPONENTS Widgets Network)
 
+qt_wrap_cpp(MAIN_MOC_SOURCES
+    backend_controller.h
+)
+
 # 创建可执行程序
 add_executable(main
     main.cpp
+
+    # Backend Controller
+    backend_controller.cpp
+    backend_controller.h
+    ${MAIN_MOC_SOURCES}
 
     # UI Theme
     ui_theme.cpp

@@ -115,6 +115,7 @@ static void setDisconnectedUi(
     state.connected = false;
     state.userId = 0;
     state.skKey.clear();
+    state.model.clear();
 
     if (state.connectButton) {
         state.connectButton->setEnabled(true);
@@ -203,6 +204,7 @@ void handlePythonEvent(
 
         state.connected = true;
         state.userId = event.value("user_id").toInt(0);
+        state.model = event.value("model").toString();
 
         if (state.connectButton) {
             state.connectButton->setEnabled(false);
@@ -218,13 +220,17 @@ void handlePythonEvent(
 
         if (state.userIdLabel) {
             state.userIdLabel->setText(
-                QString("已连接 ID: %1").arg(state.userId)
+                QString("已连接 ID: %1 · %2")
+                    .arg(state.userId)
+                    .arg(state.model)
             );
         }
 
         appendChatNotice(
             chatView,
-            QString("已连接，ID=%1").arg(state.userId),
+            QString("已连接，ID=%1，模型=%2")
+                .arg(state.userId)
+                .arg(state.model),
             "#69D8C4"
         );
 

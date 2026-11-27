@@ -95,6 +95,29 @@ void applyDarkTheme(QApplication &app)
             border-radius: 12px;
         }
 
+        QComboBox#modelCombo {
+            color: #DCE5EE;
+            background-color: #0B1016;
+            border: 1px solid #344454;
+            border-radius: 8px;
+            padding: 6px 10px;
+            selection-background-color: #276B60;
+        }
+
+        QComboBox#modelCombo QLineEdit {
+            color: #DCE5EE;
+            background-color: transparent;
+            border: none;
+            padding: 0;
+        }
+
+        QComboBox#modelCombo QAbstractItemView {
+            color: #DCE5EE;
+            background-color: #111923;
+            border: 1px solid #344454;
+            selection-background-color: #276B60;
+        }
+
         QLineEdit#skKeyInput {
             color: #DCE5EE;
             background-color: #0B1016;

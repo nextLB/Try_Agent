@@ -1,13 +1,12 @@
 
 #include <QApplication>
 #include <QColor>
+#include <QComboBox>
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QIcon>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMainWindow>
@@ -17,22 +16,18 @@
 #include <QSizePolicy>
 #include <QStringList>
 #include <QTextEdit>
-#include <QTcpSocket>
 #include <QVBoxLayout>
 #include <QWidget>
 
-#include <cstdio>
-
+#include "backend_controller.h"
 #include "ui_theme.h"
-#include "python_event_handler.h"
-#include "python_stdout_parser.h"
 
 
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
 
-    app.setApplicationName("Harness");
+    app.setApplicationName("Agent Harness");
     app.setOrganizationName("PersonalProjects");
 
     applyDarkTheme(app);
@@ -74,7 +69,7 @@ int main(int argc, char *argv[])
     QMainWindow window;
 
     window.setObjectName("mainWindow");
-    window.setWindowTitle("Harness");
+    window.setWindowTitle("Agent Harness");
 
     if (!appIconPath.isEmpty()) {
         window.setWindowIcon(QIcon(appIconPath));
@@ -120,7 +115,7 @@ int main(int argc, char *argv[])
         );
     }
 
-    auto *titleLabel = new QLabel("Harness", titleBar);
+    auto *titleLabel = new QLabel("Agent Harness", titleBar);
 
     titleLabel->setObjectName("appTitleLabel");
 
@@ -140,6 +135,21 @@ int main(int argc, char *argv[])
 
     connectionLayout->setContentsMargins(10, 8, 10, 8);
     connectionLayout->setSpacing(10);
+
+    auto *modelCombo = new QComboBox(connectionPanel);
+
+    modelCombo->setObjectName("modelCombo");
+    modelCombo->setEditable(true);
+    modelCombo->addItem("");
+    modelCombo->addItem("qwen4-max");
+    modelCombo->addItem("qwen-plus");
+    modelCombo->addItem("qwen3.8-omni-flash");
+    modelCombo->setCurrentIndex(0);
+    modelCombo->lineEdit()->setPlaceholderText(
+        "模型（默认 qwen4-max）"
+    );
+    modelCombo->setFixedHeight(34);
+    modelCombo->setMinimumWidth(180);
 
     auto *skKeyInput = new QLineEdit(connectionPanel);
 
@@ -167,6 +177,7 @@ int main(int argc, char *argv[])
 
     userIdLabel->setObjectName("userIdLabel");
 
+    connectionLayout->addWidget(modelCombo);
     connectionLayout->addWidget(skKeyInput);
     connectionLayout->addWidget(connectButton);
     connectionLayout->addWidget(disconnectButton);
@@ -253,233 +264,24 @@ int main(int argc, char *argv[])
     const QString serverHost = "127.0.0.1";
     const quint16 serverPort = 9000;
 
-    auto *backendSocket = new QTcpSocket(&app);
+    BackendController controller(serverHost, serverPort, &window);
 
-    BackendUiState backendState;
-
-    backendState.connectButton = connectButton;
-    backendState.disconnectButton = disconnectButton;
-    backendState.sendButton = sendButton;
-    backendState.userIdLabel = userIdLabel;
-    backendState.skKeyInput = skKeyInput;
-
-    QByteArray backendBuffer;
-    QString pendingSkKey;
-
-    auto sendRequest = [backendSocket](const QJsonObject &request) {
-        const QByteArray payload =
-            QJsonDocument(request).toJson(QJsonDocument::Compact)
-            + '\n';
-
-        backendSocket->write(payload);
-        backendSocket->flush();
-    };
-
-    QObject::connect(
+    controller.bindUi({
+        modelCombo,
+        skKeyInput,
+        messageInput,
         connectButton,
-        &QPushButton::clicked,
-        &window,
-        [backendSocket,
-         skKeyInput,
-         connectButton,
-         disconnectButton,
-         sendButton,
-         userIdLabel,
-         chatView,
-         sendRequest,
-         serverHost,
-         serverPort,
-         &backendState,
-         &backendBuffer,
-         &pendingSkKey]() {
-
-            const QString skKey = skKeyInput->text().trimmed();
-
-            if (skKey.isEmpty()) {
-                skKeyInput->setFocus();
-                return;
-            }
-
-            backendState.skKey = skKey;
-            pendingSkKey = skKey;
-
-            backendSocket->abort();
-            backendBuffer.clear();
-
-            connectButton->setEnabled(false);
-            disconnectButton->setEnabled(false);
-            sendButton->setEnabled(false);
-            userIdLabel->setText("连接中");
-
-            backendSocket->connectToHost(serverHost, serverPort);
-
-            fprintf(stdout, "[Harness] Connecting to backend...\n");
-
-            fflush(stdout);
-        }
-    );
-
-    QObject::connect(
-        backendSocket,
-        &QTcpSocket::connected,
-        &window,
-        [sendRequest, &pendingSkKey]() {
-
-            QJsonObject request;
-
-            request.insert("type", "connect");
-            request.insert("sk-key", pendingSkKey);
-
-            sendRequest(request);
-        }
-    );
-
-    QObject::connect(
-        backendSocket,
-        &QTcpSocket::readyRead,
-        &window,
-        [backendSocket, chatView, &backendBuffer, &backendState]() {
-
-            backendBuffer += backendSocket->readAll();
-
-            processStdoutBuffer(
-                backendBuffer,
-                chatView,
-                backendState
-            );
-        }
-    );
-
-    QObject::connect(
-        backendSocket,
-        &QTcpSocket::disconnected,
-        &window,
-        [connectButton,
-         disconnectButton,
-         sendButton,
-         userIdLabel,
-         &backendState]() {
-
-            backendState.connected = false;
-            backendState.userId = 0;
-            backendState.skKey.clear();
-
-            connectButton->setEnabled(true);
-            disconnectButton->setEnabled(false);
-            sendButton->setEnabled(false);
-            userIdLabel->setText("未连接");
-
-            fprintf(stdout, "[Harness] Backend disconnected\n");
-
-            fflush(stdout);
-        }
-    );
-
-    QObject::connect(
-        backendSocket,
-        &QTcpSocket::errorOccurred,
-        &window,
-        [connectButton,
-         disconnectButton,
-         sendButton,
-         userIdLabel]() {
-
-            connectButton->setEnabled(true);
-            disconnectButton->setEnabled(false);
-            sendButton->setEnabled(false);
-            userIdLabel->setText("未连接");
-
-            fprintf(stderr, "[Harness] Backend connection error\n");
-
-            fflush(stderr);
-        }
-    );
-
-    QObject::connect(
-        sendButton,
-        &QPushButton::clicked,
-        &window,
-        [messageInput,
-         backendSocket,
-         sendButton,
-         chatView,
-         sendRequest,
-         &backendState]() {
-
-            const QString message =
-                messageInput->toPlainText().trimmed();
-
-            if (message.isEmpty()) {
-                messageInput->setFocus();
-                return;
-            }
-
-            if (!backendState.connected ||
-                backendSocket->state()
-                    != QAbstractSocket::ConnectedState) {
-
-                fprintf(
-                    stderr,
-                    "[Harness] Backend is not connected.\n"
-                );
-
-                fflush(stderr);
-
-                return;
-            }
-
-            QJsonObject request;
-
-            request.insert("type", "chat");
-            request.insert("user_id", backendState.userId);
-            request.insert("sk-key", backendState.skKey);
-            request.insert("text", message);
-
-            sendRequest(request);
-
-            appendChatUserMessage(chatView, message);
-
-            messageInput->clear();
-            messageInput->setFocus();
-
-            sendButton->setEnabled(false);
-        }
-    );
-
-    QObject::connect(
         disconnectButton,
-        &QPushButton::clicked,
-        &window,
-        [backendSocket,
-         sendButton,
-         disconnectButton,
-         sendRequest,
-         &backendState]() {
-
-            if (!backendState.connected) {
-                return;
-            }
-
-            QJsonObject request;
-
-            request.insert("type", "disconnect");
-            request.insert("user_id", backendState.userId);
-            request.insert("sk-key", backendState.skKey);
-
-            sendRequest(request);
-
-            disconnectButton->setEnabled(false);
-            sendButton->setEnabled(false);
-        }
-    );
+        sendButton,
+        userIdLabel,
+        chatView,
+    });
 
     QObject::connect(
         &app,
         &QCoreApplication::aboutToQuit,
-        backendSocket,
-        [backendSocket]() {
-            backendSocket->disconnectFromHost();
-        }
+        &controller,
+        &BackendController::disconnectFromHost
     );
 
     window.show();
